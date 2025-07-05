@@ -1,0 +1,200 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import random
+import os
+import json
+import time
+
+HIGHSCORE_FILE = "highscores.json"
+
+class GuessingGame:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Advanced Number Guessing Game")
+        self.root.geometry("800x600")
+        self.difficulty = tk.StringVar(value="Medium")
+        self.start_time = None
+        self.dark_mode = tk.BooleanVar(value=False)
+        self.username = tk.StringVar(value="")
+
+        self.highscores = []
+        self.load_highscores()
+        self.style = ttk.Style()
+        self.setup_theme()
+        self.setup_name_entry()
+
+    def setup_theme(self):
+        self.style.theme_use('clam')
+        btn_bg = "#4CAF50"
+        btn_fg = "#ffffff"
+        self.style.configure("TButton", background=btn_bg, foreground=btn_fg, padding=8)
+        self.style.map("TButton", background=[("active", "#45a049")])
+        self.set_theme()
+
+    def set_theme(self):
+        bg = "#121212" if self.dark_mode.get() else "#ffffff"
+        fg = "#ffffff" if self.dark_mode.get() else "#000000"
+        self.root.configure(bg=bg)
+        self.style.configure("TFrame", background=bg)
+        self.style.configure("TLabel", background=bg, foreground=fg, font=("Arial", 14))
+        self.style.configure("TButton", font=("Arial", 14), background="#4CAF50", foreground="#fff")
+        self.style.configure("TRadiobutton", background=bg, foreground=fg, font=("Arial", 14))
+        self.style.configure("TCheckbutton", background=bg, foreground=fg, font=("Arial", 14))
+        self.style.configure("TEntry", font=("Arial", 14))
+
+    def setup_dark_mode_toggle(self, parent):
+        top_frame = ttk.Frame(parent)
+        top_frame.pack(anchor="ne", padx=10, pady=5)
+        ttk.Checkbutton(top_frame, text="Dark Mode", variable=self.dark_mode, command=self.set_theme).pack()
+
+    def setup_name_entry(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        self.setup_dark_mode_toggle(self.root)
+
+        main_frame = ttk.Frame(self.root, padding=20)
+        main_frame.pack(expand=True)
+
+        ttk.Label(main_frame, text="Enter Your Name:").pack(pady=10)
+        self.name_entry = ttk.Entry(main_frame, textvariable=self.username, width=30)
+        self.name_entry.pack(pady=10)
+
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=20)
+        ttk.Button(btn_frame, text="Continue", command=self.validate_name_entry).pack(side="left", padx=10)
+        ttk.Button(btn_frame, text="Check Leaderboard", command=self.show_leaderboard_screen).pack(side="left", padx=10)
+
+    def validate_name_entry(self):
+        if not self.username.get().strip():
+            messagebox.showwarning("Invalid Name", "Please enter your name before continuing.")
+        else:
+            self.setup_difficulty_selection()
+
+    def setup_difficulty_selection(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        self.setup_dark_mode_toggle(self.root)
+        self.set_theme()
+        main_frame = ttk.Frame(self.root, padding=20)
+        main_frame.pack(expand=True)
+
+        ttk.Label(main_frame, text=f"Welcome, {self.username.get()}!").pack(pady=(0, 20))
+        ttk.Label(main_frame, text="Select Difficulty Level:").pack(pady=10)
+
+        difficulty_frame = ttk.LabelFrame(main_frame, padding=10)
+        difficulty_frame.pack(pady=10, fill="x")
+
+        for level in ["Easy", "Medium", "Hard"]:
+            ttk.Radiobutton(
+                difficulty_frame, text=level, variable=self.difficulty, value=level
+            ).pack(anchor="w", padx=10, pady=4)
+
+        ttk.Button(main_frame, text="Start Game", command=self.start_game).pack(pady=20)
+
+    def start_game(self):
+        level = self.difficulty.get()
+        self.max_number = {"Easy": 50, "Medium": 100, "Hard": 200}[level]
+        self.number_to_guess = random.randint(1, self.max_number)
+        self.attempts = 0
+        self.start_time = time.time()
+
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.build_game_ui()
+
+    def build_game_ui(self):
+        self.setup_dark_mode_toggle(self.root)
+
+        ttk.Label(self.root, text=f"Guess a number between 1 and {self.max_number}").pack(pady=10)
+        self.entry = ttk.Entry(self.root)
+        self.entry.pack(pady=5)
+
+        ttk.Button(self.root, text="Guess", command=self.check_guess).pack(pady=5)
+        ttk.Button(self.root, text="Give Up", command=self.show_leaderboard_screen).pack(pady=5)
+
+        self.feedback = ttk.Label(self.root, text="")
+        self.feedback.pack(pady=10)
+
+        self.score_label = ttk.Label(self.root, text="Score: 100")
+        self.score_label.pack(pady=5)
+
+    def check_guess(self):
+        try:
+            guess = int(self.entry.get())
+            if not (1 <= guess <= self.max_number):
+                self.feedback.config(text=f"Enter a number between 1 and {self.max_number}")
+                return
+
+            self.attempts += 1
+            time_taken = int(time.time() - self.start_time)
+            score = max(100 - self.attempts * 5 - time_taken // 2, 0)
+
+            if guess < self.number_to_guess:
+                self.feedback.config(text="Too low!")
+            elif guess > self.number_to_guess:
+                self.feedback.config(text="Too high!")
+            else:
+                self.feedback.config(text=f"You guessed it in {self.attempts} tries!\nFinal Score: {score}\nTime: {time_taken}s")
+                self.update_highscore(score)
+                if messagebox.askyesno("You Won!", "Play again?"):
+                    self.setup_name_entry()
+                else:
+                    self.show_leaderboard_screen()
+                return
+
+            hint = ""
+            if self.attempts == 2:
+                hint = "Hint: It's even." if self.number_to_guess % 2 == 0 else "Hint: It's odd."
+            elif self.attempts == 3:
+                hint = "Hint: Divisible by 5." if self.number_to_guess % 5 == 0 else "Hint: Not divisible by 5."
+
+            self.feedback.config(text=self.feedback.cget("text") + f"\n{hint}")
+            self.score_label.config(text=f"Score: {score}")
+
+        except ValueError:
+            self.feedback.config(text="Please enter a valid integer.")
+
+    def load_highscores(self):
+        if os.path.exists(HIGHSCORE_FILE):
+            with open(HIGHSCORE_FILE, "r") as f:
+                self.highscores = json.load(f)
+        else:
+            self.highscores = []
+
+    def update_highscore(self, score):
+        self.highscores.append({"name": self.username.get(), "score": score})
+        filtered = {}
+        for entry in self.highscores:
+            name = entry['name']
+            if name not in filtered or entry['score'] > filtered[name]['score']:
+                filtered[name] = entry
+        self.highscores = sorted(filtered.values(), key=lambda x: x['score'], reverse=True)[:5]
+        with open(HIGHSCORE_FILE, "w") as f:
+            json.dump(self.highscores, f, indent=2)
+
+    def show_leaderboard_screen(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        self.setup_dark_mode_toggle(self.root)
+        self.set_theme()
+        self.load_highscores()
+
+        main_frame = ttk.Frame(self.root, padding=20)
+        main_frame.pack(expand=True)
+
+        ttk.Label(main_frame, text="Leaderboard (Top 5):").pack(pady=(0, 10))
+        displayed = set()
+        for entry in self.highscores:
+            if entry['name'] not in displayed:
+                ttk.Label(main_frame, text=f"{entry['name']} - {entry['score']}").pack()
+                displayed.add(entry['name'])
+
+        ttk.Button(main_frame, text="Play Again", command=self.setup_name_entry).pack(pady=20)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    game = GuessingGame(root)
+    root.mainloop()
